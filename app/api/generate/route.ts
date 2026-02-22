@@ -146,7 +146,7 @@ async function callOpenRouter(opts: {
         { role: "user", content: opts.user },
       ],
       temperature: 0.2,
-      max_tokens: opts.maxTokens ?? 300,
+      max_tokens: opts.maxTokens ?? 2500,
       response_format: { type: "json_object" },
     }),
   });
