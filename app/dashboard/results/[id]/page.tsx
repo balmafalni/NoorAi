@@ -1,44 +1,48 @@
-"use client";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 
-import { useParams, useRouter } from "next/navigation";
-import { loadResult } from "@/lib/nooraiStorage";
+export default async function ResultPage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  const supabase = createSupabaseServerClient();
 
-export default function ResultPage() {
-  const params = useParams<{ id: string }>();
-  const router = useRouter();
+  // Check logged-in user
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) redirect("/login");
 
-  const data = loadResult(params.id);
+  // Load generation from DB
+  const { data, error } = await supabase
+    .from("generations")
+    .select("topic, mode, length_seconds, result, created_at")
+    .eq("id", params.id)
+    .single();
 
-  if (!data) {
-    return (
-      <div className="p-6">
-        <h1 className="text-xl font-bold">Result not found</h1>
-        <button
-          onClick={() => router.push("/dashboard")}
-          className="mt-4 px-4 py-2 border rounded"
-        >
-          Back
-        </button>
-      </div>
-    );
+  if (error || !data) {
+    return <div className="p-6">Result not found.</div>;
   }
+
+  const r: any = data.result;
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">{data.topic}</h1>
+      <h1 className="text-2xl font-bold">{data.topic}</h1>
 
-      <section className="mb-6">
+      {/* Hooks */}
+      <section className="mt-6">
         <h2 className="font-bold mb-2">Hooks</h2>
         <ul className="list-disc pl-5">
-          {data.hooks?.map((h: string, i: number) => (
+          {(r.hooks ?? []).map((h: string, i: number) => (
             <li key={i}>{h}</li>
           ))}
         </ul>
       </section>
 
-      <section className="mb-6">
+      {/* Script */}
+      <section className="mt-6">
         <h2 className="font-bold mb-2">Script</h2>
-        {data.script_beats?.map((b: any, i: number) => (
+        {(r.script_beats ?? []).map((b: any, i: number) => (
           <div key={i} className="mb-3">
             <div className="font-semibold">{b.t}</div>
             <div>{b.voiceover}</div>
@@ -46,14 +50,16 @@ export default function ResultPage() {
         ))}
       </section>
 
-      <section className="mb-6">
+      {/* Caption */}
+      <section className="mt-6">
         <h2 className="font-bold mb-2">Caption</h2>
-        <p>{data.caption}</p>
+        <p>{r.caption}</p>
       </section>
 
-      <section>
+      {/* Hashtags */}
+      <section className="mt-6">
         <h2 className="font-bold mb-2">Hashtags</h2>
-        <p>{data.hashtags?.join(" ")}</p>
+        <p>{(r.hashtags ?? []).join(" ")}</p>
       </section>
     </div>
   );

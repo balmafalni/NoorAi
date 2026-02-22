@@ -1,11 +1,9 @@
+// app/api/generate/route.ts
 import { NextResponse } from "next/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
-
-type Mode = "faith_advice" | "history_facts";
-type Goal = "saves" | "shares" | "comments" | "follows";
-type Language = "arabic" | "english" | "bilingual";
-type Tone = "calm" | "emotional" | "intense";
 
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
@@ -13,10 +11,22 @@ function jsonError(message: string, status = 400) {
 
 function stripCodeFences(s: string) {
   const trimmed = (s ?? "").trim();
+  // ```json ... ``` or ``` ... ```
   if (trimmed.startsWith("```")) {
-    return trimmed.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+    return trimmed
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/```$/i, "")
+      .trim();
   }
   return trimmed;
+}
+
+function extractFirstJsonObject(text: string) {
+  const s = (text ?? "").trim();
+  const start = s.indexOf("{");
+  const end = s.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  return s.slice(start, end + 1);
 }
 
 function buildSystemPrompt() {
@@ -33,160 +43,111 @@ function buildSystemPrompt() {
     "Return ONLY valid JSON.",
     "No prose, no markdown, no code fences, no explanations.",
     "If Arabic text is present, it must appear only inside JSON string values.",
-    "Do not add any text before or after the JSON object."
+    "Do not add any text before or after the JSON object.",
   ].join("\n");
 }
 
 function buildUserPrompt(input: {
-  mode: Mode;
+  mode: string;
   topic: string;
-  lengthSeconds: 30 | 45 | 60;
-  goal: Goal;
-  language: Language;
-  tone: Tone;
-  referenceText?: string;
-  sourceNotes?: string;
+  lengthSeconds: number;
+  goal: string;
+  language: string;
+  tone: string;
+  referenceText?: string | null;
+  sourceNotes?: string | null;
 }) {
-  const schema = {
-    mode: "faith_advice | history_facts",
-    topic: "",
-    length_seconds: 45,
-    hooks: [""],
-    certainty: "Confirmed | Disputed | Legend | N/A",
-    verification_note: "",
-    script_beats: [{ t: "0-3", voiceover: "", visual: "", onscreen: "" }],
-    caption: "",
-    hashtags: [""],
-    ctas: [""],
-  };
-
-  const base = [
-    `APP: NoorAi`,
-    `MODE: ${input.mode === "faith_advice" ? "Faith/Advice" : "History Facts"}`,
-    `TOPIC: ${input.topic}`,
-    `LENGTH: ${input.lengthSeconds}s`,
-    `GOAL: ${input.goal}`,
-    `LANGUAGE: ${input.language}`,
-    `TONE: ${input.tone}`,
-    "",
-    "You must generate:",
-    "- 10 hooks (<= 7 words each; if bilingual use 'AR — EN')",
-    "- 1 final script as timestamped beats (cover full duration; short spoken sentences)",
-    "- shot list inside each beat (visual field)",
-    "- on-screen text per beat (<= 6 words)",
-    "- caption (1–2 lines) + 12 hashtags",
-    "- 3 CTA variants (based on GOAL)",
-    "",
-  ];
-
-  const faithRules = [
-    "FAITH RULES:",
-    "- Respectful faith tone. No claiming exact quotes unless reference text is provided by the user.",
-    "- If reference text is missing: general advice only; do NOT attribute quotes to Quran/Hadith.",
-    "- Set certainty = 'N/A'.",
-    "- verification_note: remind to verify references if using quotes.",
-  ];
-
-  const historyRules = [
-    "HISTORY RULES:",
-    "- Include dates/locations/names when known; if uncertain mark as 'estimated' or 'disputed'.",
-    "- Set certainty to one of: Confirmed, Disputed, Legend.",
-    "- verification_note: one line telling creator what to verify before posting.",
-    "- Do not present disputed claims as confirmed.",
-  ];
-
-  const extras: string[] = [];
-  if (input.mode === "faith_advice") {
-    if (input.referenceText?.trim()) {
-      extras.push("USER PROVIDED REFERENCE TEXT (user-supplied; do not invent extra quotes):");
-      extras.push(input.referenceText.trim());
-    } else {
-      extras.push("No reference text provided.");
-    }
-    extras.push(...faithRules);
-  } else {
-    if (input.sourceNotes?.trim()) {
-      extras.push("USER NOTES/SOURCES (user-supplied hints; do not invent citations):");
-      extras.push(input.sourceNotes.trim());
-    } else {
-      extras.push("No source notes provided.");
-    }
-    extras.push(...historyRules);
-  }
+  const {
+    mode,
+    topic,
+    lengthSeconds,
+    goal,
+    language,
+    tone,
+    referenceText,
+    sourceNotes,
+  } = input;
 
   return [
-    ...base,
-    ...extras,
+    "Generate a reel script package in STRICT JSON using this exact schema (no extra keys):",
     "",
-    "Return STRICT JSON exactly matching this schema keys (same keys, no extra keys):",
-    JSON.stringify(schema, null, 2),
+    "{",
+    '  "topic": string,',
+    '  "mode": "faith_advice" | "history_facts" | "mixed",',
+    '  "language": "English" | "Arabic" | "Bilingual",',
+    '  "tone": string,',
+    '  "length_seconds": 30 | 45 | 60,',
+    '  "goal": string,',
+    '  "hooks": string[],            // exactly 6 items',
+    '  "script_beats": [             // max 8 beats',
+    "    {",
+    '      "t": string,              // timestamp like "0:00-0:07"',
+    '      "visual": string,',
+    '      "voiceover": string,',
+    '      "on_screen_text": string',
+    "    }",
+    "  ],",
+    '  "caption": string,',
+    '  "hashtags": string[],         // exactly 8 items',
+    '  "cta": string                 // one sentence CTA',
+    "}",
+    "",
+    "Constraints:",
+    "- hooks: exactly 6",
+    "- hashtags: exactly 8",
+    "- script_beats: maximum 8",
+    "- Keep it accurate; do NOT fabricate exact scripture/hadith citations.",
+    "- If the user supplies reference text, you may paraphrase it and you may quote ONLY what the user provided.",
+    "- If Arabic language is requested, keep Arabic inside JSON strings only.",
+    "",
+    "Inputs:",
+    `- mode: ${mode}`,
+    `- topic: ${topic}`,
+    `- length_seconds: ${lengthSeconds}`,
+    `- goal: ${goal}`,
+    `- language: ${language}`,
+    `- tone: ${tone}`,
+    referenceText?.trim()
+      ? `- reference_text (user-provided): ${referenceText.trim()}`
+      : "- reference_text: (none provided)",
+    sourceNotes?.trim()
+      ? `- source_notes (user-provided): ${sourceNotes.trim()}`
+      : "- source_notes: (none provided)",
   ].join("\n");
-}
-
-async function callOpenRouter(opts: {
-  model: string;
-  system: string;
-  user: string;
-  maxTokens?: number;
-}) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error("Missing OPENROUTER_API_KEY");
-
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": process.env.OPENROUTER_SITE_URL ?? "http://localhost:3000",
-      "X-Title": "NoorAi",
-    },
-    body: JSON.stringify({
-      model: opts.model,
-      messages: [
-        { role: "system", content: opts.system },
-        { role: "user", content: opts.user },
-      ],
-      temperature: 0.2,
-      max_tokens: opts.maxTokens ?? 2500, // ✅ FIX 1: was 300, way too low
-      // ✅ FIX 2: removed response_format — it's OpenAI-only and breaks Claude on OpenRouter
-    }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`OpenRouter error ${res.status}: ${text}`);
-  }
-
-  const data = await res.json();
-  return (data?.choices?.[0]?.message?.content ?? "") as string;
 }
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => null);
-    if (!body) return jsonError("Invalid JSON body");
+    // 1) Auth (must be logged in)
+    const supabase = createSupabaseServerClient();
+    const { data: userData } = await supabase.auth.getUser();
 
-    const mode: Mode = body.mode;
-    const topic: string = (body.topic ?? "").trim();
-    const lengthSeconds = body.lengthSeconds as 30 | 45 | 60;
-    const goal: Goal = body.goal;
-    const language: Language = body.language;
-    const tone: Tone = body.tone;
-    const referenceText: string | undefined = body.referenceText;
-    const sourceNotes: string | undefined = body.sourceNotes;
+    if (!userData.user) {
+      return jsonError("Unauthorized", 401);
+    }
+    const userId = userData.user.id;
 
-    if (!mode || (mode !== "faith_advice" && mode !== "history_facts"))
-      return jsonError("mode must be 'faith_advice' or 'history_facts'");
-    if (!topic) return jsonError("topic is required");
-    if (![30, 45, 60].includes(lengthSeconds))
-      return jsonError("lengthSeconds must be 30, 45, or 60");
-    if (!["saves", "shares", "comments", "follows"].includes(goal))
-      return jsonError("Invalid goal");
-    if (!["arabic", "english", "bilingual"].includes(language))
-      return jsonError("Invalid language");
-    if (!["calm", "emotional", "intense"].includes(tone))
-      return jsonError("Invalid tone");
+    // 2) Parse body safely
+    let body: any = null;
+    try {
+      body = await req.json();
+    } catch {
+      return jsonError("Invalid JSON body", 400);
+    }
 
+    const mode = String(body?.mode ?? "mixed");
+    const topic = String(body?.topic ?? "").trim();
+    const lengthSeconds = Number(body?.lengthSeconds ?? 45);
+    const goal = String(body?.goal ?? "comments");
+    const language = String(body?.language ?? "English");
+    const tone = String(body?.tone ?? "Calm");
+    const referenceText = (body?.referenceText ?? body?.reference_text ?? "") as string;
+    const sourceNotes = (body?.sourceNotes ?? body?.source_notes ?? "") as string;
+
+    if (!topic) return jsonError("Missing topic", 400);
+    if (![30, 45, 60].includes(lengthSeconds)) return jsonError("Invalid lengthSeconds", 400);
+
+    // 3) Build prompts
     const system = buildSystemPrompt();
     const user = buildUserPrompt({
       mode,
@@ -199,22 +160,93 @@ export async function POST(req: Request) {
       sourceNotes,
     });
 
-const model = "anthropic/claude-3.5-sonnet";
-    const raw = await callOpenRouter({ model, system, user });
+    // 4) Call OpenRouter
+    const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+    if (!OPENROUTER_API_KEY) return jsonError("Missing OPENROUTER_API_KEY", 500);
+
+    const model = process.env.OPENROUTER_MODEL ?? "anthropic/claude-3.5-sonnet";
+
+    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        // Optional but helpful for OpenRouter routing/analytics:
+        "HTTP-Referer": process.env.OPENROUTER_SITE_URL ?? "http://localhost:3000",
+        "X-Title": "NoorAi",
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.2,
+        max_tokens: 900,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+      }),
+    });
+
+    const payload = await resp.json();
+
+    if (!resp.ok) {
+      const msg =
+        payload?.error?.message ||
+        payload?.message ||
+        `OpenRouter error (${resp.status})`;
+      return jsonError(msg, resp.status);
+    }
+
+    const raw = payload?.choices?.[0]?.message?.content ?? "";
     const cleaned = stripCodeFences(raw);
 
-    let parsed: any;
+    // 5) Robust JSON parse (Arabic-safe)
+    let parsed: any = null;
+
+    // Try direct
     try {
       parsed = JSON.parse(cleaned);
     } catch {
+      // Try extracting first {...}
+      const extracted = extractFirstJsonObject(cleaned);
+      if (extracted) {
+        try {
+          parsed = JSON.parse(extracted);
+        } catch {
+          parsed = null;
+        }
+      }
+    }
+
+    if (!parsed) {
+      console.error("RAW MODEL OUTPUT (truncated):", cleaned.slice(0, 2000));
       return jsonError("Model did not return valid JSON. Try again.", 502);
     }
 
-    return NextResponse.json({ data: parsed }, { status: 200 });
+    // 6) Save to Supabase (DB history)
+    const { data: inserted, error: insErr } = await supabaseAdmin
+      .from("generations")
+      .insert({
+        user_id: userId,
+        mode,
+        topic,
+        length_seconds: lengthSeconds,
+        goal,
+        language,
+        tone,
+        result: parsed,
+      })
+      .select("id")
+      .single();
+
+    if (insErr || !inserted?.id) {
+      console.error("DB insert failed:", insErr);
+      return jsonError("Failed to save generation", 500);
+    }
+
+    // 7) Return id for redirect to /dashboard/results/[id]
+    return NextResponse.json({ id: inserted.id, data: parsed }, { status: 200 });
   } catch (err: any) {
-    return NextResponse.json(
-      { error: err?.message ?? "Server error" },
-      { status: 500 }
-    );
+    console.error(err);
+    return jsonError(err?.message ?? "Server error", 500);
   }
 }
