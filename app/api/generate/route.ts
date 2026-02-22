@@ -199,8 +199,7 @@ export async function POST(req: Request) {
       sourceNotes,
     });
 
-const model = "google/gemini-flash-1.5:free";
-
+const model = "anthropic/claude-3.5-sonnet";
     const raw = await callOpenRouter({ model, system, user });
     const cleaned = stripCodeFences(raw);
 
