@@ -36,6 +36,7 @@ function buildSystemPrompt() {
     "Do not add any text before or after the JSON object."
   ].join("\n");
 }
+
 function buildUserPrompt(input: {
   mode: Mode;
   topic: string;
@@ -146,8 +147,8 @@ async function callOpenRouter(opts: {
         { role: "user", content: opts.user },
       ],
       temperature: 0.2,
-      max_tokens: opts.maxTokens ?? 2500,
-      response_format: { type: "json_object" },
+      max_tokens: opts.maxTokens ?? 2500, // ✅ FIX 1: was 300, way too low
+      // ✅ FIX 2: removed response_format — it's OpenAI-only and breaks Claude on OpenRouter
     }),
   });
 
