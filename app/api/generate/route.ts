@@ -13,25 +13,10 @@ function jsonError(message: string, status = 400) {
 
 function stripCodeFences(s: string) {
   const trimmed = (s ?? "").trim();
-
-  // Remove leading/trailing code fences if present
   if (trimmed.startsWith("```")) {
-    return trimmed
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/```\s*$/i, "")
-      .trim();
+    return trimmed.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
   }
-
   return trimmed;
-}
-
-
-function extractFirstJsonObject(text: string) {
-  const s = (text ?? "").trim();
-  const start = s.indexOf("{");
-  const end = s.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) return null;
-  return s.slice(start, end + 1);
 }
 
 function buildSystemPrompt() {
@@ -84,12 +69,11 @@ function buildUserPrompt(input: {
     `TONE: ${input.tone}`,
     "",
     "You must generate:",
-    "- 6 hooks (<= 7 words each; if bilingual use 'AR — EN')",
-    "- 1 final script as timestamped beats (cover full duration; short spoken sentences)
-- Max 8 script beats total",
+    "- 10 hooks (<= 7 words each; if bilingual use 'AR — EN')",
+    "- 1 final script as timestamped beats (cover full duration; short spoken sentences)",
     "- shot list inside each beat (visual field)",
     "- on-screen text per beat (<= 6 words)",
-    "- caption (1–2 lines) + 8 hashtags",
+    "- caption (1–2 lines) + 12 hashtags",
     "- 3 CTA variants (based on GOAL)",
     "",
   ];
@@ -162,7 +146,8 @@ async function callOpenRouter(opts: {
         { role: "user", content: opts.user },
       ],
       temperature: 0.2,
-      max_tokens: opts.maxTokens ?? 400,
+      max_tokens: opts.maxTokens ?? 300,
+      response_format: { type: "json_object" },
     }),
   });
 
@@ -218,25 +203,10 @@ export async function POST(req: Request) {
     const raw = await callOpenRouter({ model, system, user });
     const cleaned = stripCodeFences(raw);
 
-    let parsed: any = null;
-
-    // 1) Try direct JSON parse
+    let parsed: any;
     try {
       parsed = JSON.parse(cleaned);
     } catch {
-      // 2) Try extracting the first {...} block and parsing that
-      const extracted = extractFirstJsonObject(cleaned);
-      if (extracted) {
-        try {
-          parsed = JSON.parse(extracted);
-        } catch {
-          parsed = null;
-        }
-      }
-    }
-
-    if (!parsed) {
-      console.error("RAW MODEL OUTPUT (truncated):", cleaned.slice(0, 2000));
       return jsonError("Model did not return valid JSON. Try again.", 502);
     }
 
