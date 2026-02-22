@@ -162,7 +162,7 @@ async function callOpenRouter(opts: {
         { role: "user", content: opts.user },
       ],
       temperature: 0.2,
-      max_tokens: opts.maxTokens ?? 800,
+      max_tokens: opts.maxTokens ?? 500,
     }),
   });
 
