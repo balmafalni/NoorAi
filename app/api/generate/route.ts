@@ -199,7 +199,7 @@ export async function POST(req: Request) {
       sourceNotes,
     });
 
-    const model = "anthropic/claude-3.5-sonnet";
+const model = "mistralai/mistral-7b-instruct:free";
 
     const raw = await callOpenRouter({ model, system, user });
     const cleaned = stripCodeFences(raw);
