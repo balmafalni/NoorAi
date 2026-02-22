@@ -47,6 +47,16 @@ function buildSystemPrompt() {
   ].join("\n");
 }
 
+function getDailyLimit(plan: string) {
+  if (plan === "pro") return 200;
+  if (plan === "creator") return 50;
+  return 3; // free
+}
+
+function isActiveStatus(status: string | null | undefined) {
+  return status === "active" || status === "trialing";
+}
+
 function buildUserPrompt(input: {
   mode: string;
   topic: string;
@@ -126,6 +136,46 @@ export async function POST(req: Request) {
       return jsonError("Unauthorized", 401);
     }
     const userId = userData.user.id;
+// ✅ Billing + daily usage enforcement
+const { data: profile, error: profileErr } = await supabaseAdmin
+  .from("profiles")
+  .select("plan, subscription_status")
+  .eq("id", userId)
+  .single();
+
+if (profileErr) {
+  return jsonError("Failed to load user profile", 500);
+}
+
+const plan = profile?.plan ?? "free";
+const status = profile?.subscription_status ?? "inactive";
+
+const limit = getDailyLimit(plan);
+
+if (plan !== "free" && !isActiveStatus(status)) {
+  return jsonError("Subscription inactive. Please update billing.", 402);
+}
+
+// count today's generations
+const startOfDay = new Date();
+startOfDay.setHours(0, 0, 0, 0);
+
+const { count, error: countErr } = await supabaseAdmin
+  .from("generations")
+  .select("id", { count: "exact", head: true })
+  .eq("user_id", userId)
+  .gte("created_at", startOfDay.toISOString());
+
+if (countErr) {
+  return jsonError("Failed to check usage limits", 500);
+}
+
+if ((count ?? 0) >= limit) {
+  return NextResponse.json(
+    { error: `Daily limit reached (${limit}/day). Upgrade to generate more.` },
+    { status: 402 }
+  );
+}
 
     // 2) Parse body safely
     let body: any = null;
