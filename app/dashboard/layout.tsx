@@ -14,16 +14,24 @@ import {
   Settings,
   Menu,
   LogOut,
+  CreditCard,
 } from "lucide-react"
 
 const sidebarItems = [
   { label: "New Reel", href: "/dashboard", icon: PlusCircle },
   { label: "History", href: "/dashboard/history", icon: Clock },
+  { label: "Billing", href: "/dashboard/billing", icon: CreditCard }, // ✅ added
   { label: "Presets", href: "/dashboard/presets", icon: Sliders },
   { label: "Settings", href: "/dashboard/settings", icon: Settings },
 ]
 
-function SidebarContent({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+function SidebarContent({
+  pathname,
+  onNavigate,
+}: {
+  pathname: string
+  onNavigate?: () => void
+}) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-5">
@@ -68,7 +76,11 @@ function SidebarContent({ pathname, onNavigate }: { pathname: string; onNavigate
             <p className="truncate text-xs text-sidebar-foreground/60">Creator Plan</p>
           </div>
           <Link href="/">
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-sidebar-foreground/60 hover:text-sidebar-foreground">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-sidebar-foreground/60 hover:text-sidebar-foreground"
+            >
               <LogOut className="h-4 w-4" />
               <span className="sr-only">Sign out</span>
             </Button>
@@ -129,9 +141,7 @@ export default function DashboardLayout({
           </div>
         </div>
 
-        <main className="flex-1 overflow-y-auto">
-          {children}
-        </main>
+        <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>
   )
