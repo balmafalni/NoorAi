@@ -29,10 +29,13 @@ function buildSystemPrompt() {
     "- If the user did not provide verified reference text, do not claim exact scripture/hadith quotes.",
     "- Avoid hate, harassment, or political incitement.",
     "",
-    "Output MUST be STRICT JSON matching the schema provided by the user. No extra text."
+    "Output MUST be STRICT JSON matching the schema provided by the user.",
+    "Return ONLY valid JSON.",
+    "No prose, no markdown, no code fences, no explanations.",
+    "If Arabic text is present, it must appear only inside JSON string values.",
+    "Do not add any text before or after the JSON object."
   ].join("\n");
 }
-
 function buildUserPrompt(input: {
   mode: Mode;
   topic: string;
@@ -142,7 +145,7 @@ async function callOpenRouter(opts: {
         { role: "system", content: opts.system },
         { role: "user", content: opts.user },
       ],
-      temperature: 0.8,
+      temperature: 0.2,
       max_tokens: opts.maxTokens ?? 700,
       response_format: { type: "json_object" },
     }),
