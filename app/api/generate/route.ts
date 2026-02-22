@@ -1,8 +1,7 @@
 // app/api/generate/route.ts
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
-
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 export const runtime = "nodejs";
 
 function jsonError(message: string, status = 400) {
